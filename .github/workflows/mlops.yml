@@ -1,0 +1,155 @@
+name: MLOps — Full Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "dataset/**"
+      - "train.py"
+      - "app.py"
+      - "requirements.txt"
+      - "Dockerfile"
+  workflow_dispatch:
+    inputs:
+      dataset_version:
+        description: "Override dataset version (leave empty for auto)"
+        required: false
+        type: string
+
+env:
+  PYTHON_VERSION: "3.11"
+  AZURE_STORAGE_CONTAINER: datasets
+  MLFLOW_EXPERIMENT_NAME: water-potability-mlops
+  MODEL_NAME: water_potability_model
+  MODEL_STAGE_OR_ALIAS: Production
+  DATASET_LOCAL_PATH: dataset/water_potability.csv
+
+jobs:
+  mlops-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ---------------------------------------------------------------
+      # 1. Checkout
+      # ---------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------
+      # 2. Generate dataset version
+      # ---------------------------------------------------------------
+      - name: Generate dataset version
+        id: version
+        run: |
+          if [ -n "${{ inputs.dataset_version }}" ]; then
+            echo "DATASET_VERSION=${{ inputs.dataset_version }}" >> $GITHUB_OUTPUT
+          else
+            echo "DATASET_VERSION=$(date -u +'%Y-%m-%d_%H%M%S')" >> $GITHUB_OUTPUT
+          fi
+
+      # ---------------------------------------------------------------
+      # 3. Login to Azure
+      # ---------------------------------------------------------------
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # ---------------------------------------------------------------
+      # 4. Upload dataset to Azure Blob Storage
+      # ---------------------------------------------------------------
+      - name: Upload dataset to Blob Storage
+        run: |
+          DATASET_VERSION="${{ steps.version.outputs.DATASET_VERSION }}"
+
+          # Upload versioned copy
+          az storage blob upload \
+            --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
+            --container-name ${{ env.AZURE_STORAGE_CONTAINER }} \
+            --file ${{ env.DATASET_LOCAL_PATH }} \
+            --name "${DATASET_VERSION}/water_potability.csv" \
+            --auth-mode key
+
+          # Upload as latest (overwrite)
+          az storage blob upload \
+            --account-name ${{ secrets.AZURE_STORAGE_ACCOUNT }} \
+            --container-name ${{ env.AZURE_STORAGE_CONTAINER }} \
+            --file ${{ env.DATASET_LOCAL_PATH }} \
+            --name "latest_water_potability.csv" \
+            --auth-mode key \
+            --overwrite
+
+          echo "Uploaded dataset version: ${DATASET_VERSION}"
+
+      # ---------------------------------------------------------------
+      # 5. Setup Python
+      # ---------------------------------------------------------------
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # ---------------------------------------------------------------
+      # 6. Install dependencies
+      # ---------------------------------------------------------------
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ---------------------------------------------------------------
+      # 7. Get MLflow tracking URI from Azure ML Workspace
+      # ---------------------------------------------------------------
+      - name: Get MLflow tracking URI
+        id: mlflow
+        run: |
+          URI=$(az ml workspace show \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.AZURE_ML_WORKSPACE }} \
+            --query mlflow_tracking_uri -o tsv)
+          echo "MLFLOW_TRACKING_URI=${URI}" >> $GITHUB_OUTPUT
+          echo "MLflow URI: ${URI}"
+
+      # ---------------------------------------------------------------
+      # 8. Train model
+      # ---------------------------------------------------------------
+      - name: Train model
+        run: python train.py
+        env:
+          DATASET_PATH: ${{ env.DATASET_LOCAL_PATH }}
+          DATASET_VERSION: ${{ steps.version.outputs.DATASET_VERSION }}
+          MLFLOW_TRACKING_URI: ${{ steps.mlflow.outputs.MLFLOW_TRACKING_URI }}
+          MLFLOW_EXPERIMENT_NAME: ${{ env.MLFLOW_EXPERIMENT_NAME }}
+          MODEL_NAME: ${{ env.MODEL_NAME }}
+
+      # ---------------------------------------------------------------
+      # 9. Login to Azure Container Registry
+      # ---------------------------------------------------------------
+      - name: Login to ACR
+        run: |
+          az acr login --name ${{ secrets.AZURE_ACR_NAME }}
+
+      # ---------------------------------------------------------------
+      # 10. Build and push Docker image
+      # ---------------------------------------------------------------
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG="${{ secrets.AZURE_ACR_NAME }}.azurecr.io/water-potability-api:${{ github.sha }}"
+          docker build -t ${IMAGE_TAG} .
+          docker push ${IMAGE_TAG}
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+
+      # ---------------------------------------------------------------
+      # 11. Deploy to Azure Container Apps
+      # ---------------------------------------------------------------
+      - name: Deploy to Azure Container Apps
+        run: |
+          az containerapp update \
+            --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --image ${{ env.IMAGE_TAG }} \
+            --set-env-vars \
+              MODEL_NAME=${{ env.MODEL_NAME }} \
+              MODEL_STAGE_OR_ALIAS=${{ env.MODEL_STAGE_OR_ALIAS }} \
+              DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }} \
+              MLFLOW_TRACKING_URI=${{ steps.mlflow.outputs.MLFLOW_TRACKING_URI }}

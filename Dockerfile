@@ -1,22 +1,15 @@
-FROM python:3.8.10-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# install linux package dependencies
-RUN apt-get update -y
-RUN apt-get install -y libgomp1
+RUN apt-get update -y && apt-get install -y libgomp1 && rm -rf /var/lib/apt/lists/*
 
-# can copy files only from current working directory where docker builds
-# cannot copy files from arbitrary directories
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ./model_for_production/ /data/model_for_production
-COPY ./requirements.txt .
-
-RUN pip install -r requirements.txt
-
-# COPY ./modeling/*.py ./modeling/
 COPY ./*.py .
+COPY ./dataset/ ./dataset/
 
 EXPOSE 5000
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5000"]
