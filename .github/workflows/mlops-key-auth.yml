@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - ".github/workflows/**"
       - "dataset/**"
       - "config/train.yaml"
       - "config/hyperparameters.yaml"
@@ -13,6 +14,7 @@ on:
       - "prediction_logger.py"
       - "requirements.txt"
       - "Dockerfile"
+      - "scripts/**"
   workflow_dispatch:
     inputs:
       dataset_version:
