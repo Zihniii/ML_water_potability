@@ -198,8 +198,13 @@ class TrainConfig:
 
         clf_type = self.classifier_type
         if clf_type in hp_data:
-            self.classifier_params = hp_data[clf_type]
-            self.is_grid_search = True
+            clf_section = hp_data[clf_type]
+            if isinstance(clf_section, dict):
+                prefixed = {}
+                for k, v in clf_section.items():
+                    prefixed[f"classifier__{k}"] = v
+                self.classifier_params = prefixed
+                self.is_grid_search = True
 
         # Imputer grid search config (optional)
         if self.imputer_type in hp_data:
