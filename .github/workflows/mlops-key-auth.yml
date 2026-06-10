@@ -120,9 +120,7 @@ jobs:
           fi
 
       - name: Train model
-        run: |
-          python train.py --config config/train.yaml --hyperparameters config/hyperparameters.yaml || \
-          python train.py --config config/train.yaml
+        run: python train.py --config config/train.yaml
         env:
           DATASET_PATH: ${{ env.DATASET_LOCAL_PATH }}
           DATASET_VERSION: ${{ steps.version.outputs.DATASET_VERSION }}
