@@ -44,28 +44,8 @@ az containerapp create --resource-group mlops-rg --name water-potability-api \
   --target-port 5000 --ingress external
 ```
 
-### 2. Choose a CI path
+### 2. Add GitHub Secrets (key auth — no AAD needed)
 
-| Workflow | Runner | Auth | Deploy | Best for |
-|---|---|---|---|---|
-| **`mlops.yml`** | `ubuntu-latest` | Service principal | ✅ in CI | Users with full Azure subscription |
-| **`mlops-vm.yml`** | `self-hosted` | VM managed identity | ✅ in CI | Users with student/no-AAD subs |
-| **`mlops-key-auth.yml`** | `ubuntu-latest` | Storage key + ACR password | ❌ manual | Quick setup, no AAD at all |
-
-### 3. Add GitHub Secrets
-
-**Option A** (service principal):
-| Secret | Source |
-|---|---|
-| `AZURE_CREDENTIALS` | `az ad sp create-for-rbac --name "gh-sp" --role contributor --scopes /subscriptions/<id>/resourceGroups/mlops-rg --sdk-auth` |
-| `AZURE_RESOURCE_GROUP` | `mlops-rg` |
-| `AZURE_STORAGE_ACCOUNT` | Your storage account name |
-| `AZURE_ACR_NAME` | Your ACR name |
-| `AZURE_CONTAINER_APP_NAME` | `water-potability-api` |
-| `AZURE_CONTAINER_APP_ENV` | `water-potability-env` |
-| `AZURE_ML_WORKSPACE` | `water-potability-mlw` |
-
-**Option B** (key auth — no AAD):
 | Secret | Source |
 |---|---|
 | `AZURE_STORAGE_ACCOUNT` | Your storage account name |
@@ -75,11 +55,23 @@ az containerapp create --resource-group mlops-rg --name water-potability-api \
 | `ACR_PASSWORD` | `az acr credential show --name <acr> --query "passwords[0].value" -o tsv` |
 | `MLFLOW_TRACKING_URI` | `az ml workspace show -g mlops-rg -n water-potability-mlw --query mlflow_tracking_uri -o tsv` |
 
-### 4. Push
+### 3. Push — CI trains model & pushes Docker image
 
 ```bash
 git push origin main
 ```
+
+CI runs `mlops-key-auth.yml`: validate → upload dataset → train → push image to ACR.
+
+### 4. Deploy to Azure Container Apps (from your machine)
+
+Since your Azure account lacks AAD permissions, deployment is a single command locally:
+
+```powershell
+.\scripts\deploy.ps1 -AcrName <your-acr-name>
+```
+
+This reads the latest image tag from git, deploys to Container Apps, and runs a health check.
 
 ---
 
@@ -134,9 +126,10 @@ az staticwebapp create \
 #    (Settings → Deployment Token) and add it as a GitHub secret:
 #    Name: AZURE_SWA_DEPLOY_TOKEN
 
-# 3. Add your backend API URL as a GitHub variable or secret:
+# 3. Add your backend API URL as a GitHub variable:
 #    Name: BACKEND_API_URL
 #    Value: https://water-potability-api.azurecontainerapps.io
+#    (Or the URL of your deployed container app)
 
 # 4. Push to main — the workflow deploys automatically
 git push origin main

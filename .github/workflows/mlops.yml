@@ -1,18 +1,6 @@
 name: MLOps — Full Pipeline
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "dataset/**"
-      - "config/train.yaml"
-      - "config/hyperparameters.yaml"
-      - "train.py"
-      - "app.py"
-      - "dataset_manager.py"
-      - "prediction_logger.py"
-      - "requirements.txt"
-      - "Dockerfile"
   workflow_dispatch:
     inputs:
       dataset_version:
@@ -21,6 +9,7 @@ on:
         type: string
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PYTHON_VERSION: "3.11"
   AZURE_STORAGE_CONTAINER: datasets
   MLFLOW_EXPERIMENT_NAME: water-potability-mlops
