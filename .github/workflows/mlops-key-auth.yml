@@ -156,3 +156,22 @@ jobs:
           ACR="${{ env.ACR_NAME }}.azurecr.io"
           docker build -t ${ACR}/mlflow-server:latest -f docker/mlflow.Dockerfile .
           docker push ${ACR}/mlflow-server:latest
+
+      - name: Deploy API to App Service
+        if: ${{ secrets.AZURE_API_PUBLISH_PROFILE != '' }}
+        uses: azure/webapps-deploy@v3
+        with:
+          publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
+          images: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          app-settings: |
+            MLFLOW_TRACKING_URI=${{ vars.MLFLOW_TRACKING_URI || 'http://127.0.0.1:5001' }}
+            MODEL_NAME=${{ env.MODEL_NAME }}
+            MODEL_STAGE_OR_ALIAS=${{ env.MODEL_STAGE_OR_ALIAS }}
+            DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }}
+
+      - name: Deploy MLflow to App Service
+        if: ${{ secrets.AZURE_MLFLOW_PUBLISH_PROFILE != '' }}
+        uses: azure/webapps-deploy@v3
+        with:
+          publish-profile: ${{ secrets.AZURE_MLFLOW_PUBLISH_PROFILE }}
+          images: ${{ env.ACR_NAME }}.azurecr.io/mlflow-server:latest

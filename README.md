@@ -1,6 +1,6 @@
 # Water Potability — MLOps Pipeline
 
-End-to-end MLOps project: config-driven training → dataset versioning → cloud MLflow tracking → model registry promotion → FastAPI serving → CI/CD → Azure Container Apps.
+End-to-end MLOps project: config-driven training → dataset versioning → MLflow tracking → model registry promotion → FastAPI serving → CI/CD → Azure App Service.
 
 ---
 
@@ -32,16 +32,7 @@ az group create --name mlops-rg --location southeastasia
 az storage account create --name <unique-name> --resource-group mlops-rg
 az storage container create --account-name <name> --name datasets
 
-az ml workspace create --resource-group mlops-rg --name water-potability-mlw \
-  --storage-account <name>
-
 az acr create --resource-group mlops-rg --name <acr-name> --sku Basic --admin-enabled true
-
-az provider register -n Microsoft.App
-az containerapp env create --resource-group mlops-rg --name water-potability-env
-az containerapp create --resource-group mlops-rg --name water-potability-api \
-  --environment water-potability-env --image mcr.microsoft.com/azuredocs/containerapps-helloworld:latest \
-  --target-port 5000 --ingress external
 ```
 
 ### 2. Add GitHub Secrets (key auth — no AAD needed)
@@ -53,25 +44,63 @@ az containerapp create --resource-group mlops-rg --name water-potability-api \
 | `AZURE_ACR_NAME` | Your ACR name |
 | `ACR_USERNAME` | Your ACR name |
 | `ACR_PASSWORD` | `az acr credential show --name <acr> --query "passwords[0].value" -o tsv` |
-| `MLFLOW_TRACKING_URI` | `az ml workspace show -g mlops-rg -n water-potability-mlw --query mlflow_tracking_uri -o tsv` |
 
-### 3. Push — CI trains model & pushes Docker image
+### 3. Push — CI trains model & pushes Docker images
 
 ```bash
 git push origin main
 ```
 
-CI runs `mlops-key-auth.yml`: validate → upload dataset → train → push image to ACR.
+CI runs `mlops-key-auth.yml`: validate → upload dataset → train → push API + MLflow images to ACR.
 
-### 4. Deploy to Azure Container Apps (from your machine)
+### 4. Create App Services (one-time, from Azure Portal)
 
-Since your Azure account lacks AAD permissions, deployment is a single command locally:
+Create **two** App Services in the Azure Portal (no CLI needed):
 
+**API App Service:**
+- Publish: **Container**
+- Region: *same as your resource group*
+- OS: **Linux**
+- Plan: **Basic B1** (free enough)
+- Image source: **Azure Container Registry**
+- Registry: *your ACR name*
+- Image: `water-potability-api` → Tag: `latest`
+- Startup command: *(leave blank)*
+- Port: **5000**
+- Name: `water-potability-api`
+
+**MLflow App Service:**
+- Same settings, but:
+- Image: `mlflow-server` → Tag: `latest`
+- Port: **5001**
+- Name: `mlflow-server`
+
+### 5. Add publish profiles as GitHub secrets
+
+For each App Service in Portal → **Deployment Center → Publish Profile** → Download XML → Add as GitHub secret:
+
+| Secret name | From App Service |
+|---|---|
+| `AZURE_API_PUBLISH_PROFILE` | `water-potability-api` |
+| `AZURE_MLFLOW_PUBLISH_PROFILE` | `mlflow-server` |
+
+### 6. Add MLflow URL as a GitHub variable
+
+Get the URL:
 ```powershell
-.\scripts\deploy.ps1 -AcrName <your-acr-name>
+az webapp show --name mlflow-server --resource-group mlops-rg --query defaultHostName -o tsv
 ```
 
-This reads the latest image tag from git, deploys to Container Apps, and runs a health check.
+Go to GitHub → **Settings → Secrets and variables → Actions → Variables** → Add `MLFLOW_TRACKING_URI` = `https://mlflow-server.azurewebsites.net`
+
+### 7. Next push — fully automated
+
+```
+push → train → build images → push to ACR → deploy API → deploy MLflow
+```
+
+Access the MLflow UI at `https://mlflow-server.azurewebsites.net`
+Access the API at `https://water-potability-api.azurewebsites.net/health`
 
 ---
 
@@ -128,42 +157,13 @@ az staticwebapp create \
 
 # 3. Add your backend API URL as a GitHub variable:
 #    Name: BACKEND_API_URL
-#    Value: https://water-potability-api.azurecontainerapps.io
-#    (Or the URL of your deployed container app)
+#    Value: https://water-potability-api.azurewebsites.net
 
 # 4. Push to main — the workflow deploys automatically
 git push origin main
 ```
 
 **Local dev:** `NEXT_PUBLIC_API_URL` defaults to `http://localhost:5000` — matches `docker compose up -d`.
-
-## Cloud MLflow Server
-
-CI uses a local MLflow server by default. To switch to a cloud MLflow server on Azure Container Apps:
-
-### 1. Deploy MLflow (one-time, from your machine)
-
-```powershell
-.\scripts\deploy-mlflow.ps1 -AcrName <your-acr-name>
-```
-
-This creates an Azure Files share for persistence and deploys MLflow to Container Apps.
-
-### 2. Get the URL & add as GitHub variable
-
-```powershell
-az containerapp show --name mlflow-server --resource-group mlops-rg `
-  --query properties.configuration.ingress.fqdn -o tsv
-# → mlflow-server.xyz.azurecontainerapps.io
-```
-
-Go to GitHub → **Settings → Secrets and variables → Actions → Variables** → Add `MLFLOW_TRACKING_URI` = `https://mlflow-server.xyz.azurecontainerapps.io`
-
-Next CI run will use the cloud server automatically. The MLflow image is pushed to ACR by the CI pipeline on every push.
-
-### Access the MLflow UI
-
-Open `https://mlflow-server.xyz.azurecontainerapps.io` in your browser to view experiments, compare runs, and manage the model registry.
 
 ## Docs
 
