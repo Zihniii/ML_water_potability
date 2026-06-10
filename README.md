@@ -137,6 +137,34 @@ git push origin main
 
 **Local dev:** `NEXT_PUBLIC_API_URL` defaults to `http://localhost:5000` — matches `docker compose up -d`.
 
+## Cloud MLflow Server
+
+CI uses a local MLflow server by default. To switch to a cloud MLflow server on Azure Container Apps:
+
+### 1. Deploy MLflow (one-time, from your machine)
+
+```powershell
+.\scripts\deploy-mlflow.ps1 -AcrName <your-acr-name>
+```
+
+This creates an Azure Files share for persistence and deploys MLflow to Container Apps.
+
+### 2. Get the URL & add as GitHub variable
+
+```powershell
+az containerapp show --name mlflow-server --resource-group mlops-rg `
+  --query properties.configuration.ingress.fqdn -o tsv
+# → mlflow-server.xyz.azurecontainerapps.io
+```
+
+Go to GitHub → **Settings → Secrets and variables → Actions → Variables** → Add `MLFLOW_TRACKING_URI` = `https://mlflow-server.xyz.azurecontainerapps.io`
+
+Next CI run will use the cloud server automatically. The MLflow image is pushed to ACR by the CI pipeline on every push.
+
+### Access the MLflow UI
+
+Open `https://mlflow-server.xyz.azurecontainerapps.io` in your browser to view experiments, compare runs, and manage the model registry.
+
 ## Docs
 
 | File | Contents |

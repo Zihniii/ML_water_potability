@@ -102,6 +102,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Use cloud MLflow if available, otherwise start local
+        id: mlflow
+        run: |
+          CLOUD_URI="${{ vars.MLFLOW_TRACKING_URI }}"
+          if [ -n "$CLOUD_URI" ]; then
+            echo "MLFLOW_TRACKING_URI=${CLOUD_URI}" >> $GITHUB_OUTPUT
+            echo "Using cloud MLflow: ${CLOUD_URI}"
+          else
+            echo "Starting local MLflow server..."
+            mlflow server \
+              --host 127.0.0.1 --port 5001 \
+              --backend-store-uri sqlite:///mlflow.db \
+              --default-artifact-root ./mlruns &
+            sleep 3
+            echo "MLFLOW_TRACKING_URI=http://127.0.0.1:5001" >> $GITHUB_OUTPUT
+          fi
+
       - name: Train model
         run: |
           python train.py --config config/train.yaml --hyperparameters config/hyperparameters.yaml || \
@@ -109,19 +126,33 @@ jobs:
         env:
           DATASET_PATH: ${{ env.DATASET_LOCAL_PATH }}
           DATASET_VERSION: ${{ steps.version.outputs.DATASET_VERSION }}
-          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_URI: ${{ steps.mlflow.outputs.MLFLOW_TRACKING_URI }}
           MLFLOW_EXPERIMENT_NAME: ${{ env.MLFLOW_EXPERIMENT_NAME }}
           MODEL_NAME: ${{ env.MODEL_NAME }}
 
-      - name: Build and push Docker image to ACR
+      - name: Stop local MLflow server (if started)
+        if: ${{ !vars.MLFLOW_TRACKING_URI }}
+        run: pkill -f "mlflow server" || true
+
+      - name: Login to ACR
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login \
+            "${{ env.ACR_NAME }}.azurecr.io" \
+            -u "${{ secrets.ACR_USERNAME }}" \
+            --password-stdin
+
+      - name: Build and push API image to ACR
         run: |
           ACR="${{ env.ACR_NAME }}.azurecr.io"
           SHA_TAG="${ACR}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
           VERSION_TAG="${ACR}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.DATASET_VERSION }}"
-          docker login ${ACR} \
-            -u "${{ secrets.ACR_USERNAME }}" \
-            -p "${{ secrets.ACR_PASSWORD }}"
           docker build -t ${SHA_TAG} -t ${VERSION_TAG} .
           docker push ${SHA_TAG}
           docker push ${VERSION_TAG}
           echo "IMAGE_TAG=${SHA_TAG}" >> $GITHUB_ENV
+
+      - name: Build and push MLflow image to ACR
+        run: |
+          ACR="${{ env.ACR_NAME }}.azurecr.io"
+          docker build -t ${ACR}/mlflow-server:latest -f docker/mlflow.Dockerfile .
+          docker push ${ACR}/mlflow-server:latest
