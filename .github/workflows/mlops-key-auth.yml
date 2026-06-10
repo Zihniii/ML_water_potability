@@ -158,7 +158,7 @@ jobs:
           docker push ${ACR}/mlflow-server:latest
 
       - name: Deploy API to App Service
-        if: ${{ secrets.AZURE_API_PUBLISH_PROFILE != '' }}
+        if: ${{ vars.MLFLOW_TRACKING_URI != '' }}
         uses: azure/webapps-deploy@v3
         with:
           publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
@@ -170,7 +170,7 @@ jobs:
             DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }}
 
       - name: Deploy MLflow to App Service
-        if: ${{ secrets.AZURE_MLFLOW_PUBLISH_PROFILE != '' }}
+        if: ${{ vars.MLFLOW_TRACKING_URI != '' }}
         uses: azure/webapps-deploy@v3
         with:
           publish-profile: ${{ secrets.AZURE_MLFLOW_PUBLISH_PROFILE }}
