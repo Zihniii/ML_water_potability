@@ -543,7 +543,7 @@ def _promote_if_better(
         latest_prod = client.get_latest_versions(config.model_name, stages=["Production"])
 
         if not latest_prod:
-            print("No Production model found — promoting current run to Production.")
+            print("No Production model found - promoting current run to Production.")
             _transition_latest_to_stage(client, config.model_name, "Production")
             return
 
@@ -554,7 +554,7 @@ def _promote_if_better(
         current_metric = current_metrics.get(config.promotion_metric)
 
         if prod_metric is None:
-            print(f"No {config.promotion_metric} found on Production model — promoting.")
+            print(f"No {config.promotion_metric} found on Production model - promoting.")
             _transition_latest_to_stage(client, config.model_name, "Production")
             return
 
@@ -563,10 +563,10 @@ def _promote_if_better(
         print(f"  Current    {config.promotion_metric}: {current_metric:.4f}")
 
         if current_metric is not None and current_metric >= prod_metric:
-            print("  Current model is better or equal — promoting to Production.")
+            print("  Current model is better or equal - promoting to Production.")
             _transition_latest_to_stage(client, config.model_name, "Production")
         else:
-            print("  Production model is better — skipping promotion.")
+            print("  Production model is better - skipping promotion.")
 
     except Exception as e:
         print(f"Model promotion skipped ({e})")
@@ -585,7 +585,7 @@ def _transition_latest_to_stage(client, model_name: str, stage: str):
         version=latest_version,
         stage=stage,
     )
-    print(f"  Model version {latest_version} → {stage}")
+    print(f"  Model version {latest_version} -> {stage}")
 
     # Archive previous Production version (if any and if promoting to Production)
     if stage == "Production":
