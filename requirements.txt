@@ -2,7 +2,8 @@ fastapi==0.111.0
 uvicorn[standard]==0.29.0
 pandas==2.2.2
 scikit-learn==1.4.2
-mlflow==2.12.2
+mlflow==2.16.2
+azureml-mlflow>=1.62.0
 azure-ai-ml==1.19.0
 azure-identity==1.19.0
 azure-storage-blob

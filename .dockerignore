@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+mlruns/
+mlflow.db
+model_for_production/
+outputs/
+.env
+*.log
+.git/
