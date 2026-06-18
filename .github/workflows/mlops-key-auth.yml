@@ -143,12 +143,6 @@ jobs:
           docker push ${VERSION_TAG}
           echo "IMAGE_TAG=${SHA_TAG}" >> $GITHUB_ENV
 
-      - name: Build and push MLflow image to ACR
-        run: |
-          ACR="${{ env.ACR_NAME }}.azurecr.io"
-          docker build -t ${ACR}/mlflow-server:latest -f docker/mlflow.Dockerfile .
-          docker push ${ACR}/mlflow-server:latest
-
       - name: Deploy API to App Service
         uses: azure/webapps-deploy@v3
         with:
@@ -160,8 +154,4 @@ jobs:
             MODEL_STAGE_OR_ALIAS=${{ env.MODEL_STAGE_OR_ALIAS }}
             DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }}
 
-      - name: Deploy MLflow to App Service
-        uses: azure/webapps-deploy@v3
-        with:
-          publish-profile: ${{ secrets.AZURE_MLFLOW_PUBLISH_PROFILE }}
-          images: ${{ env.ACR_NAME }}.azurecr.io/mlflow-server:latest
+
