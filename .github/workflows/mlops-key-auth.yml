@@ -105,22 +105,7 @@ jobs:
       - name: Azure login (for MLflow tracking)
         env:
           CREDS: ${{ secrets.AZURE_CREDENTIALS }}
-        run: |
-          python3 <<EOF
-import json, os, subprocess
-creds = json.loads(os.environ['CREDS'])
-with open(os.environ['GITHUB_ENV'], 'a') as f:
-    f.write(f"AZURE_CLIENT_ID={creds['clientId']}\n")
-    f.write(f"AZURE_CLIENT_SECRET={creds['clientSecret']}\n")
-    f.write(f"AZURE_TENANT_ID={creds['tenantId']}\n")
-    f.write(f"AZURE_SUBSCRIPTION_ID={creds['subscriptionId']}\n")
-subprocess.run(["az", "login", "--service-principal",
-    "-u", creds["clientId"],
-    "-p", creds["clientSecret"],
-    "--tenant", creds["tenantId"]], check=True)
-subprocess.run(["az", "account", "set",
-    "--subscription", creds["subscriptionId"]], check=True)
-EOF
+        run: python3 -c "import json, os, subprocess; creds=json.loads(os.environ['CREDS']); [open(os.environ['GITHUB_ENV'],'a').write(f\"{k}={v}\n\") for k,v in [('AZURE_CLIENT_ID',creds['clientId']),('AZURE_CLIENT_SECRET',creds['clientSecret']),('AZURE_TENANT_ID',creds['tenantId']),('AZURE_SUBSCRIPTION_ID',creds['subscriptionId'])]]; subprocess.run(['az','login','--service-principal','-u',creds['clientId'],'-p',creds['clientSecret'],'--tenant',creds['tenantId']],check=True); subprocess.run(['az','account','set','--subscription',creds['subscriptionId']],check=True)"
 
       - name: Use cloud MLflow if available, otherwise start local
         id: mlflow
