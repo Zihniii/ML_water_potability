@@ -13,8 +13,7 @@ pydantic-settings==2.2.1
 numpy==1.26.4
 joblib==1.4.2
 requests==2.31.0
-# Optional: uncomment for LightGBM support
-# lightgbm==4.4.0
+lightgbm==4.4.0
 # Optional: uncomment for EDA visualizations
 # matplotlib==3.8.4
 # seaborn==0.13.2
