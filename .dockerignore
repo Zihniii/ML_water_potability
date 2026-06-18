@@ -6,7 +6,6 @@ __pycache__/
 mlruns/
 mlflow.db
 model_for_production/
-outputs/
 .env
 *.log
 .git/

@@ -23,6 +23,7 @@ import json
 import os
 import sys
 import warnings
+from dotenv import load_dotenv
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -604,6 +605,8 @@ def _transition_latest_to_stage(client, model_name: str, stage: str):
 # Main
 # ===================================================================
 def main():
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Water Potability MLOps Training")
     parser.add_argument(
         "--config",
@@ -708,6 +711,14 @@ def main():
 
     # ---- Log to MLflow ----
     run_id = _log_to_mlflow(config, pipeline, metrics, metadata, cv_best_params)
+
+    # ---- Save model for Docker deployment ----
+    import joblib
+    os.makedirs("outputs", exist_ok=True)
+    joblib.dump(pipeline, "outputs/model.joblib")
+    with open("outputs/model_metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+    print(f"Model saved to outputs/model.joblib")
 
     # ---- Model promotion ----
     _promote_if_better(config, metrics)

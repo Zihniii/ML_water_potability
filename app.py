@@ -21,6 +21,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
+import joblib
 import mlflow
 import numpy as np
 from fastapi import FastAPI
@@ -96,6 +97,24 @@ if MLFLOW_TRACKING_URI:
         print(f"Failed to load model from MLflow: {e}")
 else:
     print("MLFLOW_TRACKING_URI not set — model will not be loaded.")
+
+# Fallback: load local model.joblib if MLflow registry failed
+if sklearn_pipeline is None:
+    local_model_path = "outputs/model.joblib"
+    if os.path.exists(local_model_path):
+        try:
+            sklearn_pipeline = joblib.load(local_model_path)
+            _model_info["loaded_model_uri"] = local_model_path
+            meta_path = "outputs/model_metadata.json"
+            if os.path.exists(meta_path):
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                _model_info["dataset_version"] = meta.get("dataset_version", DATASET_VERSION)
+            print(f"Loaded model from local file: {local_model_path}")
+        except Exception as e:
+            print(f"Failed to load local model: {e}")
+    else:
+        print(f"Local model file not found at: {local_model_path}")
 
 # ------------------------------------------------------------------
 # FastAPI app

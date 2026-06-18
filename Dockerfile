@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ./*.py .
 COPY ./dataset/ ./dataset/
+COPY ./outputs/ ./outputs/
 
 EXPOSE 5000
 
