@@ -126,6 +126,37 @@ jobs:
         if: always()
         run: pkill -f "mlflow server" || true
 
+      - name: Upload model to Blob Storage
+        run: |
+          DATASET_VERSION="${{ steps.version.outputs.DATASET_VERSION }}"
+          az storage blob upload \
+            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+            --account-key ${{ secrets.AZURE_STORAGE_KEY }} \
+            --container-name ${{ env.AZURE_STORAGE_CONTAINER }} \
+            --file outputs/model.joblib \
+            --name "models/${DATASET_VERSION}/model.joblib"
+          az storage blob upload \
+            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+            --account-key ${{ secrets.AZURE_STORAGE_KEY }} \
+            --container-name ${{ env.AZURE_STORAGE_CONTAINER }} \
+            --file outputs/model.joblib \
+            --name "models/latest/model.joblib" \
+            --overwrite
+          az storage blob upload \
+            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+            --account-key ${{ secrets.AZURE_STORAGE_KEY }} \
+            --container-name ${{ env.AZURE_STORAGE_CONTAINER }} \
+            --file outputs/model_metadata.json \
+            --name "models/${DATASET_VERSION}/model_metadata.json"
+          az storage blob upload \
+            --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+            --account-key ${{ secrets.AZURE_STORAGE_KEY }} \
+            --container-name ${{ env.AZURE_STORAGE_CONTAINER }} \
+            --file outputs/model_metadata.json \
+            --name "models/latest/model_metadata.json" \
+            --overwrite
+          echo "Uploaded model to blob: models/${DATASET_VERSION}/"
+
       - name: Login to ACR
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login \
