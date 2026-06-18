@@ -98,23 +98,7 @@ if STORAGE_ACCOUNT and STORAGE_KEY:
 else:
     print("AZURE_STORAGE_ACCOUNT not set — skipping Blob download.")
 
-# Fallback: load local model.joblib
-if sklearn_pipeline is None:
-    local_model_path = "outputs/model.joblib"
-    if os.path.exists(local_model_path):
-        try:
-            sklearn_pipeline = joblib.load(local_model_path)
-            _model_info["loaded_model_uri"] = local_model_path
-            meta_path = "outputs/model_metadata.json"
-            if os.path.exists(meta_path):
-                with open(meta_path) as f:
-                    meta = json.load(f)
-                _model_info["dataset_version"] = meta.get("dataset_version", DATASET_VERSION)
-            print(f"Loaded model from local file: {local_model_path}")
-        except Exception as e:
-            print(f"Failed to load local model: {e}")
-    else:
-        print(f"Local model file not found at: {local_model_path}")
+
 
 # ------------------------------------------------------------------
 # FastAPI app
@@ -216,8 +200,7 @@ def _update_stats(prediction: int, probability: float):
     day_key = now.strftime("%Y-%m-%d")
     _daily_counts[day_key] = _daily_counts.get(day_key, 0) + 1
 
-    mv = _model_version_number or 0
-    _model_version_counts[mv] = _model_version_counts.get(mv, 0) + 1
+    _model_version_counts[0] = _model_version_counts.get(0, 0) + 1
 
 
 def _get_stats() -> dict:
