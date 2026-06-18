@@ -1,7 +1,7 @@
 """
 FastAPI application for Water Potability prediction.
 
-Loads model from MLflow Model Registry and serves:
+Loads model from Blob Storage (latest), MLflow Model Registry, or local fallback.
     GET  /
     GET  /health
     POST /predict
@@ -14,6 +14,8 @@ Environment variables:
     MODEL_NAME           — registered model name (default: water_potability_model)
     MODEL_STAGE_OR_ALIAS — stage to fetch (default: Production)
     DATASET_VERSION      — dataset version deployed
+    AZURE_STORAGE_ACCOUNT — storage account name (for Blob model download)
+    AZURE_STORAGE_KEY     — storage account key (for Blob model download)
 """
 import json
 import logging
@@ -22,7 +24,6 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import joblib
-import mlflow
 import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,9 @@ MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "")
 MODEL_NAME = os.getenv("MODEL_NAME", "water_potability_model")
 MODEL_STAGE_OR_ALIAS = os.getenv("MODEL_STAGE_OR_ALIAS", "Production")
 DATASET_VERSION = os.getenv("DATASET_VERSION", "unknown")
+STORAGE_ACCOUNT = os.getenv("AZURE_STORAGE_ACCOUNT", "")
+STORAGE_KEY = os.getenv("AZURE_STORAGE_KEY", "")
+STORAGE_CONTAINER = "datasets"
 
 # ------------------------------------------------------------------
 # In-memory prediction stats
@@ -51,54 +55,50 @@ _daily_counts: dict = {}
 _model_version_counts: dict = {}
 
 # ------------------------------------------------------------------
-# Load model from MLflow Model Registry
+# Load model from Blob Storage (latest) or local fallback
 # ------------------------------------------------------------------
 sklearn_pipeline = None
-_model_version_number = None
 _model_info = {
     "model_name": MODEL_NAME,
     "model_stage_or_alias": MODEL_STAGE_OR_ALIAS,
-    "model_version": None,
-    "mlflow_run_id": None,
     "dataset_version": DATASET_VERSION,
     "loaded_model_uri": None,
     "api_started_timezone": "Asia/Jakarta",
 }
 
-if MLFLOW_TRACKING_URI:
+def _download_from_blob(blob_path: str, local_path: str) -> bool:
     try:
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        client = mlflow.MlflowClient()
-
-        latest_versions = client.get_latest_versions(MODEL_NAME, stages=[MODEL_STAGE_OR_ALIAS])
-        if latest_versions:
-            model_version = latest_versions[0]
-            _model_version_number = model_version.version
-            model_uri = f"models:/{MODEL_NAME}/{model_version.version}"
-            sklearn_pipeline = mlflow.sklearn.load_model(model_uri)
-
-            _model_info["model_version"] = model_version.version
-            _model_info["mlflow_run_id"] = model_version.run_id
-            _model_info["loaded_model_uri"] = model_uri
-
-            try:
-                artifact_uri = f"runs:/{model_version.run_id}/model_metadata.json"
-                metadata = mlflow.artifacts.load_dict(artifact_uri)
-                ds_version = metadata.get("dataset_version")
-                if ds_version:
-                    _model_info["dataset_version"] = ds_version
-            except Exception:
-                pass
-
-            print(f"Loaded model: {model_uri}")
-        else:
-            print(f"No model found for '{MODEL_NAME}' in stage '{MODEL_STAGE_OR_ALIAS}'")
+        from azure.storage.blob import BlobServiceClient
+        conn_str = f"DefaultEndpointsProtocol=https;AccountName={STORAGE_ACCOUNT};AccountKey={STORAGE_KEY};EndpointSuffix=core.windows.net"
+        client = BlobServiceClient.from_connection_string(conn_str)
+        blob = client.get_blob_client(container=STORAGE_CONTAINER, blob=blob_path)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        with open(local_path, "wb") as f:
+            blob.download_blob().readinto(f)
+        return True
     except Exception as e:
-        print(f"Failed to load model from MLflow: {e}")
-else:
-    print("MLFLOW_TRACKING_URI not set — model will not be loaded.")
+        print(f"Blob download failed ({blob_path}): {e}")
+        return False
 
-# Fallback: load local model.joblib if MLflow registry failed
+if STORAGE_ACCOUNT and STORAGE_KEY:
+    model_path = "outputs/model.joblib"
+    meta_path = "outputs/model_metadata.json"
+    if _download_from_blob("models/latest/model.joblib", model_path):
+        try:
+            sklearn_pipeline = joblib.load(model_path)
+            _model_info["loaded_model_uri"] = f"blob://{STORAGE_CONTAINER}/models/latest/model.joblib"
+            if _download_from_blob("models/latest/model_metadata.json", meta_path):
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                _model_info["dataset_version"] = meta.get("dataset_version", DATASET_VERSION)
+            print(f"Loaded model from Blob: models/latest/model.joblib")
+        except Exception as e:
+            print(f"Failed to load model from Blob: {e}")
+            sklearn_pipeline = None
+else:
+    print("AZURE_STORAGE_ACCOUNT not set — skipping Blob download.")
+
+# Fallback: load local model.joblib
 if sklearn_pipeline is None:
     local_model_path = "outputs/model.joblib"
     if os.path.exists(local_model_path):
@@ -333,12 +333,9 @@ def predict_with_stats(item: WaterPotabilityDataItem):
         "label": "Potable" if pred == 1 else "Not Potable",
         "probability": round(probability, 4),
         "confidence": _confidence_label(probability),
-        "model_version": _model_version_number,
         "timestamp": _jakarta_timestamp(),
         "input_timestamp": _jakarta_timestamp(),
         "model_name": _model_info["model_name"],
-        "model_stage_or_alias": _model_info["model_stage_or_alias"],
-        "mlflow_run_id": _model_info["mlflow_run_id"],
         "dataset_version": _model_info["dataset_version"],
         "prediction_stats": _get_stats(),
     }
@@ -359,9 +356,6 @@ def model_info():
     """Return metadata about the currently loaded model."""
     return {
         "model_name": _model_info["model_name"],
-        "model_version": _model_info["model_version"],
-        "model_stage_or_alias": _model_info["model_stage_or_alias"],
-        "mlflow_run_id": _model_info["mlflow_run_id"],
         "dataset_version": _model_info["dataset_version"],
         "loaded_model_uri": _model_info["loaded_model_uri"],
         "api_started_timezone": _model_info["api_started_timezone"],
