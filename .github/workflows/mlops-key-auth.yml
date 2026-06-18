@@ -203,4 +203,5 @@ jobs:
           SHA_TAG="${ACR}/mlflow-server:${{ github.sha }}"
           docker build -t ${SHA_TAG} -f docker/mlflow.Dockerfile .
           docker push ${SHA_TAG}
+          echo "MLFLOW_IMAGE_TAG=${SHA_TAG}" >> $GITHUB_ENV
 
