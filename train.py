@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import warnings
 from dotenv import load_dotenv
 from datetime import datetime, timezone
@@ -31,7 +32,7 @@ import mlflow
 import numpy as np
 import pandas as pd
 import yaml
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
@@ -431,6 +432,7 @@ def _load_dataset(file_csv: str, target_column: str, test_size: float, random_st
 def _evaluate(pipeline, X_train, y_train, X_test, y_test):
     y_train_pred = pipeline.predict(X_train)
     y_test_pred = pipeline.predict(X_test)
+    y_test_proba = pipeline.predict_proba(X_test)[:, 1]
 
     metrics = {
         "train_accuracy": round(float(accuracy_score(y_train, y_train_pred)), 4),
@@ -439,6 +441,7 @@ def _evaluate(pipeline, X_train, y_train, X_test, y_test):
         "test_f1_score": round(float(f1_score(y_test, y_test_pred, zero_division=0)), 4),
         "test_precision": round(float(precision_score(y_test, y_test_pred, zero_division=0)), 4),
         "test_recall": round(float(recall_score(y_test, y_test_pred, zero_division=0)), 4),
+        "test_roc_auc": round(float(roc_auc_score(y_test, y_test_proba)), 4),
     }
     return metrics
 
@@ -450,6 +453,7 @@ def _build_model_metadata(
     row_count: int,
     feature_count: int,
     cv_best_params: Optional[Dict[str, Any]] = None,
+    training_duration_seconds: float = 0.0,
 ) -> Dict[str, Any]:
     meta = {
         "dataset_path": config.file_csv,
@@ -464,6 +468,7 @@ def _build_model_metadata(
         "row_count": row_count,
         "feature_count": feature_count - 1,
         "training_started_at": datetime.now(timezone.utc).isoformat(),
+        "training_duration_seconds": round(training_duration_seconds, 2),
         "metrics": metrics,
     }
     if cv_best_params:
@@ -476,6 +481,7 @@ def _log_to_mlflow(
     pipeline,
     metrics: Dict[str, float],
     metadata: Dict[str, Any],
+    feature_names: list[str],
     cv_best_params: Optional[Dict[str, Any]] = None,
 ) -> str:
     mlflow.set_tracking_uri(config.mlflow_tracking_uri)
@@ -510,6 +516,21 @@ def _log_to_mlflow(
         for metric_name, metric_value in metrics.items():
             mlflow.log_metric(metric_name, metric_value)
 
+        # Log feature importance for tree-based classifiers
+        clf = pipeline.named_steps.get("classifier")
+        if clf is not None and hasattr(clf, "feature_importances_"):
+            for name, imp in zip(feature_names, clf.feature_importances_):
+                mlflow.log_metric(f"feat_imp_{name}", round(float(imp), 4))
+
+        # Build and log model signature
+        input_schema = mlflow.types.Schema(
+            [mlflow.types.ColSpec("double", name) for name in feature_names]
+        )
+        output_schema = mlflow.types.Schema(
+            [mlflow.types.ColSpec("long", "prediction")]
+        )
+        signature = mlflow.models.ModelSignature(inputs=input_schema, outputs=output_schema)
+
         # Save and log metadata artifact
         os.makedirs("outputs", exist_ok=True)
         meta_path = "outputs/model_metadata.json"
@@ -522,6 +543,7 @@ def _log_to_mlflow(
             sk_model=pipeline,
             artifact_path="model",
             registered_model_name=config.model_name,
+            signature=signature,
         )
         print(f"Model registered as '{config.model_name}'")
 
@@ -681,6 +703,7 @@ def main():
 
     # ---- Train (with or without grid search) ----
     cv_best_params = None
+    train_start = time.time()
 
     if config.is_grid_search and param_grid:
         from sklearn.model_selection import GridSearchCV, KFold
@@ -698,6 +721,10 @@ def main():
         print("Training pipeline (no grid search)...")
         pipeline.fit(X_train, y_train)
 
+    train_end = time.time()
+    training_duration = train_end - train_start
+    print(f"Training took {training_duration:.2f} seconds")
+
     # ---- Evaluate ----
     metrics = _evaluate(pipeline, X_train, y_train, X_test, y_test)
     print(f"\nMetrics:")
@@ -706,11 +733,12 @@ def main():
 
     # ---- Build metadata ----
     metadata = _build_model_metadata(
-        config, pipeline, metrics, row_count, feature_count, cv_best_params
+        config, pipeline, metrics, row_count, feature_count, cv_best_params, training_duration
     )
 
     # ---- Log to MLflow ----
-    run_id = _log_to_mlflow(config, pipeline, metrics, metadata, cv_best_params)
+    feature_names = list(X_train.columns)
+    run_id = _log_to_mlflow(config, pipeline, metrics, metadata, feature_names, cv_best_params)
 
     # ---- Save model for Docker deployment ----
     import joblib

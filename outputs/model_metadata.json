@@ -1,0 +1,22 @@
+{
+  "dataset_path": "dataset/water_potability.csv",
+  "dataset_version": "local",
+  "classifier_type": "light_gbm",
+  "imputer_type": "knn",
+  "preprocessor_type": "none",
+  "transformer_type": "none",
+  "is_pca": false,
+  "test_size": 0.2,
+  "random_state": 42,
+  "row_count": 3276,
+  "feature_count": 9,
+  "training_started_at": "2026-06-18T06:28:04.283578+00:00",
+  "metrics": {
+    "train_accuracy": 0.9668,
+    "train_f1_score": 0.9559,
+    "test_accuracy": 0.6463,
+    "test_f1_score": 0.4476,
+    "test_precision": 0.5732,
+    "test_recall": 0.3672
+  }
+}
