@@ -19,7 +19,7 @@ random_state: 42
 
 # Classifier type
 # Available: ada_boost, log_reg, random_forest, svc, light_gbm
-classifier_type: svc
+classifier_type: light_gbm
 
 # Imputer for missing values
 # Available: simple, knn, iterative
