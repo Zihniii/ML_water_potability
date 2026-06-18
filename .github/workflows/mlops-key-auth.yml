@@ -102,12 +102,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Azure login (for MLflow tracking)
-        if: false
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
       - name: Use cloud MLflow if available, otherwise start local
         id: mlflow
         run: |
