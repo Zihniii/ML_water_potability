@@ -102,22 +102,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Use cloud MLflow if available, otherwise start local
+      - name: Start local MLflow server
         id: mlflow
         run: |
-          CLOUD_URI="${{ vars.MLFLOW_TRACKING_URI }}"
-          if [ -n "$CLOUD_URI" ]; then
-            echo "MLFLOW_TRACKING_URI=${CLOUD_URI}" >> $GITHUB_OUTPUT
-            echo "Using cloud MLflow: ${CLOUD_URI}"
-          else
-            echo "Starting local MLflow server..."
-            mlflow server \
-              --host 127.0.0.1 --port 5001 \
-              --backend-store-uri sqlite:///mlflow.db \
-              --default-artifact-root ./mlruns &
-            sleep 3
-            echo "MLFLOW_TRACKING_URI=http://127.0.0.1:5001" >> $GITHUB_OUTPUT
-          fi
+          echo "Starting local MLflow server..."
+          mlflow server \
+            --host 127.0.0.1 --port 5001 \
+            --backend-store-uri sqlite:///mlflow.db \
+            --default-artifact-root ./mlruns &
+          sleep 3
+          echo "MLFLOW_TRACKING_URI=http://127.0.0.1:5001" >> $GITHUB_OUTPUT
 
       - name: Train model
         run: python train.py --config config/train.yaml
@@ -128,8 +122,8 @@ jobs:
           MLFLOW_EXPERIMENT_NAME: ${{ env.MLFLOW_EXPERIMENT_NAME }}
           MODEL_NAME: ${{ env.MODEL_NAME }}
 
-      - name: Stop local MLflow server (if started)
-        if: ${{ !vars.MLFLOW_TRACKING_URI }}
+      - name: Stop local MLflow server
+        if: always()
         run: pkill -f "mlflow server" || true
 
       - name: Login to ACR
@@ -156,7 +150,6 @@ jobs:
           docker push ${ACR}/mlflow-server:latest
 
       - name: Deploy API to App Service
-        if: ${{ vars.MLFLOW_TRACKING_URI != '' }}
         uses: azure/webapps-deploy@v3
         with:
           publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
@@ -168,7 +161,6 @@ jobs:
             DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }}
 
       - name: Deploy MLflow to App Service
-        if: ${{ vars.MLFLOW_TRACKING_URI != '' }}
         uses: azure/webapps-deploy@v3
         with:
           publish-profile: ${{ secrets.AZURE_MLFLOW_PUBLISH_PROFILE }}
