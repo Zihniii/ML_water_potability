@@ -23,7 +23,7 @@ classifier_type: random_forest
 
 # Imputer for missing values
 # Available: simple, knn, iterative
-imputer_type: knn
+imputer_type: simple
 
 # Preprocessor / feature scaling
 # Available: none, std, min_max, norm, poly, robust
