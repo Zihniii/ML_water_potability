@@ -144,7 +144,6 @@ jobs:
           echo "IMAGE_TAG=${SHA_TAG}" >> $GITHUB_ENV
 
       - name: Deploy API to App Service
-        if: ${{ vars.MLFLOW_TRACKING_URI != '' }}
         uses: azure/webapps-deploy@v3
         with:
           publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
