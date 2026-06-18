@@ -58,8 +58,10 @@ _model_version_counts: dict = {}
 # Load model from Blob Storage (latest) or local fallback
 # ------------------------------------------------------------------
 sklearn_pipeline = None
+_model_version_number = None
 _model_info = {
     "model_name": MODEL_NAME,
+    "model_version": None,
     "model_stage_or_alias": MODEL_STAGE_OR_ALIAS,
     "dataset_version": DATASET_VERSION,
     "loaded_model_uri": None,
@@ -216,7 +218,7 @@ def _get_stats() -> dict:
         "potable_percentage": round(potable_pct, 2),
         "not_potable_percentage": round(not_potable_pct, 2),
         "avg_confidence": round(avg_confidence, 4),
-        "current_model_version": _model_version_number,
+        "current_model_version": _model_info["model_version"],
         "daily_counts": dict(sorted(_daily_counts.items())),
         "model_version_counts": dict(sorted(_model_version_counts.items())),
         "last_prediction_at": s["last_prediction_at"],
@@ -278,7 +280,7 @@ def predict(item: WaterPotabilityDataItem):
         prediction=pred,
         probability=probability,
         confidence=_confidence_label(probability),
-        model_version=_model_version_number or 0,
+        model_version=_model_info["model_version"] or 0,
         input_data=item.model_dump(),
     )
 
@@ -287,7 +289,7 @@ def predict(item: WaterPotabilityDataItem):
         "label": "Potable" if pred == 1 else "Not Potable",
         "probability": round(probability, 4),
         "confidence": _confidence_label(probability),
-        "model_version": _model_version_number,
+        "model_version": _model_info["model_version"],
         "timestamp": _jakarta_timestamp(),
     }
 
@@ -307,7 +309,7 @@ def predict_with_stats(item: WaterPotabilityDataItem):
         prediction=pred,
         probability=probability,
         confidence=_confidence_label(probability),
-        model_version=_model_version_number or 0,
+        model_version=_model_info["model_version"] or 0,
         input_data=item.model_dump(),
     )
 

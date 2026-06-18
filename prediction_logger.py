@@ -53,11 +53,18 @@ class BlobPredictionLogger(PredictionLogger):
     def _init_azure(self):
         conn_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
         account_name = os.getenv("AZURE_STORAGE_ACCOUNT")
+        account_key = os.getenv("AZURE_STORAGE_KEY")
         container_name = PREDICTIONS_CONTAINER
 
         try:
             if conn_str:
                 from azure.storage.blob import BlobServiceClient
+                client = BlobServiceClient.from_connection_string(conn_str)
+                self._container_client = client.get_container_client(container_name)
+                self._use_azure = True
+            elif account_name and account_key:
+                from azure.storage.blob import BlobServiceClient
+                conn_str = f"DefaultEndpointsProtocol=https;AccountName={account_name};AccountKey={account_key};EndpointSuffix=core.windows.net"
                 client = BlobServiceClient.from_connection_string(conn_str)
                 self._container_client = client.get_container_client(container_name)
                 self._use_azure = True
