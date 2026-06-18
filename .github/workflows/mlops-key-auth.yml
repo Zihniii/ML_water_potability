@@ -28,6 +28,10 @@ env:
   PYTHON_VERSION: "3.11"
   AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
   AZURE_STORAGE_CONTAINER: datasets
+  # Remote MLflow server on Azure App Service — persists runs, metrics, and artifacts
+  # across CI runs. Prefer this over ephemeral local MLflow servers that lose data
+  # and reset the experiment each time.
+  MLFLOW_TRACKING_URI: https://mlflow-server-app.azurewebsites.net
   MLFLOW_EXPERIMENT_NAME: water-potability-mlops
   MODEL_NAME: water_potability_model
   MODEL_STAGE_OR_ALIAS: Production
@@ -103,29 +107,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Start local MLflow server
-        id: mlflow
-        run: |
-          echo "Starting local MLflow server..."
-          mlflow server \
-            --host 127.0.0.1 --port 5001 \
-            --backend-store-uri sqlite:///mlflow.db \
-            --default-artifact-root ./mlruns &
-          sleep 3
-          echo "MLFLOW_TRACKING_URI=http://127.0.0.1:5001" >> $GITHUB_OUTPUT
-
+      # Remote MLflow tracking replaces the former local MLflow server.
+      # An ephemeral local server loses all run history between CI executions,
+      # resets "version 1" every run, and prevents cross-run comparison.
+      # The remote Azure App Service MLflow server persists every run, metric,
+      # parameter, and artifact — making experiment history meaningful.
       - name: Train model
         run: python train.py --config config/train.yaml
         env:
           DATASET_PATH: ${{ env.DATASET_LOCAL_PATH }}
           DATASET_VERSION: ${{ steps.version.outputs.DATASET_VERSION }}
-          MLFLOW_TRACKING_URI: ${{ steps.mlflow.outputs.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
           MLFLOW_EXPERIMENT_NAME: ${{ env.MLFLOW_EXPERIMENT_NAME }}
           MODEL_NAME: ${{ env.MODEL_NAME }}
-
-      - name: Stop local MLflow server
-        if: always()
-        run: pkill -f "mlflow server" || true
 
       - name: Upload model to Blob Storage
         run: |
@@ -185,6 +179,16 @@ jobs:
             MODEL_STAGE_OR_ALIAS=${{ env.MODEL_STAGE_OR_ALIAS }}
             DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }}
 
+  # Build the MLflow server image with an immutable SHA tag — no `latest` tag.
+  #
+  # Why no `latest`? The production MLflow App Service references a specific image.
+  # If we overwrite `latest` on every push, a subsequent restart of the App Service
+  # would pull the newest (potentially untested) image, risking the healthy deployment.
+  #
+  # Immutable SHA tags guarantee:
+  #   1. Every build is uniquely identifiable.
+  #   2. Rollback is trivial — point the App Service back to a previous SHA tag.
+  #   3. Production is never accidentally broken by an unverified push.
   build-mlflow-image:
     needs: validate
     runs-on: ubuntu-latest
@@ -193,12 +197,10 @@ jobs:
       - name: Login to ACR
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login "${{ env.ACR_NAME }}.azurecr.io" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
-      - name: Build and push MLflow server image
+      - name: Build and push MLflow server image (immutable SHA tag only)
         run: |
           ACR="${{ env.ACR_NAME }}.azurecr.io"
           SHA_TAG="${ACR}/mlflow-server:${{ github.sha }}"
-          LATEST_TAG="${ACR}/mlflow-server:latest"
-          docker build -t ${SHA_TAG} -t ${LATEST_TAG} -f docker/mlflow.Dockerfile .
+          docker build -t ${SHA_TAG} -f docker/mlflow.Dockerfile .
           docker push ${SHA_TAG}
-          docker push ${LATEST_TAG}
 
