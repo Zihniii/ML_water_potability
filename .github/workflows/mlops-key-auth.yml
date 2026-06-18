@@ -75,6 +75,7 @@ jobs:
           fi
 
       - name: Upload dataset to Blob Storage
+        if: ${{ vars.ENABLE_AZURE == 'true' }}
         run: |
           DATASET_VERSION="${{ steps.version.outputs.DATASET_VERSION }}"
           az storage blob upload \
@@ -127,6 +128,7 @@ jobs:
         run: pkill -f "mlflow server" || true
 
       - name: Login to ACR
+        if: ${{ vars.ENABLE_AZURE == 'true' }}
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login \
             "${{ env.ACR_NAME }}.azurecr.io" \
@@ -134,6 +136,7 @@ jobs:
             --password-stdin
 
       - name: Build and push API image to ACR
+        if: ${{ vars.ENABLE_AZURE == 'true' }}
         run: |
           ACR="${{ env.ACR_NAME }}.azurecr.io"
           SHA_TAG="${ACR}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
@@ -144,6 +147,7 @@ jobs:
           echo "IMAGE_TAG=${SHA_TAG}" >> $GITHUB_ENV
 
       - name: Deploy API to App Service
+        if: ${{ vars.ENABLE_AZURE == 'true' }}
         uses: azure/webapps-deploy@v3
         with:
           publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
