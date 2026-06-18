@@ -14,6 +14,7 @@ on:
       - "prediction_logger.py"
       - "requirements.txt"
       - "Dockerfile"
+      - "docker/**"
       - "scripts/**"
   workflow_dispatch:
     inputs:
@@ -183,4 +184,21 @@ jobs:
             MODEL_NAME=${{ env.MODEL_NAME }}
             MODEL_STAGE_OR_ALIAS=${{ env.MODEL_STAGE_OR_ALIAS }}
             DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }}
+
+  build-mlflow-image:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to ACR
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login "${{ env.ACR_NAME }}.azurecr.io" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+      - name: Build and push MLflow server image
+        run: |
+          ACR="${{ env.ACR_NAME }}.azurecr.io"
+          SHA_TAG="${ACR}/mlflow-server:${{ github.sha }}"
+          LATEST_TAG="${ACR}/mlflow-server:latest"
+          docker build -t ${SHA_TAG} -t ${LATEST_TAG} -f docker/mlflow.Dockerfile .
+          docker push ${SHA_TAG}
+          docker push ${LATEST_TAG}
 
