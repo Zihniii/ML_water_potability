@@ -104,16 +104,23 @@ jobs:
 
       - name: Azure login (for MLflow tracking)
         env:
-          ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-          ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-          ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          CREDS: ${{ secrets.AZURE_CREDENTIALS }}
         run: |
-          az login --service-principal \
-            -u "$ARM_CLIENT_ID" \
-            -p "$ARM_CLIENT_SECRET" \
-            --tenant "$ARM_TENANT_ID"
-          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+          python3 <<EOF
+import json, os, subprocess
+creds = json.loads(os.environ['CREDS'])
+with open(os.environ['GITHUB_ENV'], 'a') as f:
+    f.write(f"AZURE_CLIENT_ID={creds['clientId']}\n")
+    f.write(f"AZURE_CLIENT_SECRET={creds['clientSecret']}\n")
+    f.write(f"AZURE_TENANT_ID={creds['tenantId']}\n")
+    f.write(f"AZURE_SUBSCRIPTION_ID={creds['subscriptionId']}\n")
+subprocess.run(["az", "login", "--service-principal",
+    "-u", creds["clientId"],
+    "-p", creds["clientSecret"],
+    "--tenant", creds["tenantId"]], check=True)
+subprocess.run(["az", "account", "set",
+    "--subscription", creds["subscriptionId"]], check=True)
+EOF
 
       - name: Use cloud MLflow if available, otherwise start local
         id: mlflow
