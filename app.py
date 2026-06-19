@@ -110,6 +110,7 @@ if STORAGE_ACCOUNT and STORAGE_KEY:
                 with open(meta_path) as f:
                     meta = json.load(f)
                 _model_info["dataset_version"] = meta.get("dataset_version", DATASET_VERSION)
+                _model_info["model_version"] = meta.get("model_version")
                 _model_info["classifier_type"] = meta.get("classifier_type") or _model_info["classifier_type"]
                 _model_info["imputer_type"] = meta.get("imputer_type")
                 _model_info["transformer_type"] = meta.get("transformer_type")

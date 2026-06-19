@@ -721,12 +721,36 @@ def main():
     # ---- Log to MLflow ----
     feature_names = list(X_train.columns)
     run_id = _log_to_mlflow(config, pipeline, metrics, metadata, feature_names, cv_best_params)
+    # ---- Register model version in MLflow Model Registry ----
+    model_version = None
+    try:
+        mlflow.set_tracking_uri(config.mlflow_tracking_uri)
+        client = mlflow.MlflowClient()
+
+        try:
+            client.create_registered_model(config.model_name)
+        except mlflow.exceptions.RestException:
+            pass  # already exists
+
+        source = f"blob://models/{config.dataset_version}/model.joblib"
+        new_version = client.create_model_version(
+            name=config.model_name,
+            source=source,
+            run_id=run_id,
+            description=f"Automated training {config.dataset_version}",
+        )
+        model_version = new_version.version
+        metadata["model_version"] = model_version
+        print(f"Registered model v{model_version} (source: {source})")
+    except Exception as e:
+        print(f"Model registration skipped: {e}")
 
     # ---- Save model for Docker deployment ----
     os.makedirs("outputs", exist_ok=True)
     joblib.dump(pipeline, "outputs/model.joblib")
     with open("outputs/model_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
+
     print(f"Model saved to outputs/model.joblib")
 
     # ---- Model promotion ----
