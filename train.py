@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
+import joblib
 import mlflow
 import numpy as np
 import pandas as pd
@@ -522,30 +523,11 @@ def _log_to_mlflow(
             for name, imp in zip(feature_names, clf.feature_importances_):
                 mlflow.log_metric(f"feat_imp_{name}", round(float(imp), 4))
 
-        # Build and log model signature
-        input_schema = mlflow.types.Schema(
-            [mlflow.types.ColSpec("double", name) for name in feature_names]
-        )
-        output_schema = mlflow.types.Schema(
-            [mlflow.types.ColSpec("long", "prediction")]
-        )
-        signature = mlflow.models.ModelSignature(inputs=input_schema, outputs=output_schema)
-
-        # Save and log metadata artifact
-        os.makedirs("outputs", exist_ok=True)
-        meta_path = "outputs/model_metadata.json"
-        with open(meta_path, "w") as f:
-            json.dump(metadata, f, indent=2)
-        mlflow.log_artifact(meta_path)
-
-        # Log model and register
-        mlflow.sklearn.log_model(
-            sk_model=pipeline,
-            artifact_path="model",
-            registered_model_name=config.model_name,
-            signature=signature,
-        )
-        print(f"Model registered as '{config.model_name}'")
+        # Note: model artifact (model.joblib + model_metadata.json) is saved
+        # by main() to outputs/ and uploaded to Blob by CI. No mlflow.log_artifact
+        # or mlflow.sklearn.log_model here — those would try to write to the remote
+        # server's local filesystem (/home/mlflow/artifacts) from the CI runner,
+        # which causes PermissionError. CI handles artifact persistence via Blob.
 
     return run_id
 
@@ -741,7 +723,6 @@ def main():
     run_id = _log_to_mlflow(config, pipeline, metrics, metadata, feature_names, cv_best_params)
 
     # ---- Save model for Docker deployment ----
-    import joblib
     os.makedirs("outputs", exist_ok=True)
     joblib.dump(pipeline, "outputs/model.joblib")
     with open("outputs/model_metadata.json", "w") as f:
