@@ -179,29 +179,5 @@ jobs:
             MODEL_STAGE_OR_ALIAS=${{ env.MODEL_STAGE_OR_ALIAS }}
             DATASET_VERSION=${{ steps.version.outputs.DATASET_VERSION }}
 
-  # Build the MLflow server image with an immutable SHA tag — no `latest` tag.
-  #
-  # Why no `latest`? The production MLflow App Service references a specific image.
-  # If we overwrite `latest` on every push, a subsequent restart of the App Service
-  # would pull the newest (potentially untested) image, risking the healthy deployment.
-  #
-  # Immutable SHA tags guarantee:
-  #   1. Every build is uniquely identifiable.
-  #   2. Rollback is trivial — point the App Service back to a previous SHA tag.
-  #   3. Production is never accidentally broken by an unverified push.
-  build-mlflow-image:
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Login to ACR
-        run: |
-          echo "${{ secrets.ACR_PASSWORD }}" | docker login "${{ env.ACR_NAME }}.azurecr.io" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
-      - name: Build and push MLflow server image (immutable SHA tag only)
-        run: |
-          ACR="${{ env.ACR_NAME }}.azurecr.io"
-          SHA_TAG="${ACR}/mlflow-server:${{ github.sha }}"
-          docker build -t ${SHA_TAG} -f docker/mlflow.Dockerfile .
-          docker push ${SHA_TAG}
-          echo "MLFLOW_IMAGE_TAG=${SHA_TAG}" >> $GITHUB_ENV
+
 
