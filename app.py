@@ -44,6 +44,8 @@ STORAGE_CONTAINER = "datasets"
 # In-memory prediction stats
 # NOTE: For production, replace with database or Azure Table Storage.
 # ------------------------------------------------------------------
+_api_started_at = datetime.now(timezone.utc)
+
 _prediction_stats = {
     "total_requests_since_start": 0,
     "potable_count": 0,
@@ -65,6 +67,18 @@ _model_info = {
     "model_stage_or_alias": MODEL_STAGE_OR_ALIAS,
     "dataset_version": DATASET_VERSION,
     "loaded_model_uri": None,
+    "pipeline_type": None,
+    "classifier_type": None,
+    "imputer_type": None,
+    "transformer_type": None,
+    "is_pca": None,
+    "feature_count": None,
+    "row_count": None,
+    "test_size": None,
+    "random_state": None,
+    "training_timestamp": None,
+    "metrics": None,
+    "api_started_at": None,
     "api_started_timezone": "Asia/Jakarta",
 }
 
@@ -89,16 +103,31 @@ if STORAGE_ACCOUNT and STORAGE_KEY:
         try:
             sklearn_pipeline = joblib.load(model_path)
             _model_info["loaded_model_uri"] = f"blob://{STORAGE_CONTAINER}/models/latest/model.joblib"
+            _model_info["pipeline_type"] = type(sklearn_pipeline).__name__
+            if hasattr(sklearn_pipeline, "steps"):
+                _model_info["classifier_type"] = sklearn_pipeline.steps[-1][1].__class__.__name__
             if _download_from_blob("models/latest/model_metadata.json", meta_path):
                 with open(meta_path) as f:
                     meta = json.load(f)
                 _model_info["dataset_version"] = meta.get("dataset_version", DATASET_VERSION)
+                _model_info["classifier_type"] = meta.get("classifier_type") or _model_info["classifier_type"]
+                _model_info["imputer_type"] = meta.get("imputer_type")
+                _model_info["transformer_type"] = meta.get("transformer_type")
+                _model_info["is_pca"] = meta.get("is_pca")
+                _model_info["feature_count"] = meta.get("feature_count")
+                _model_info["row_count"] = meta.get("row_count")
+                _model_info["test_size"] = meta.get("test_size")
+                _model_info["random_state"] = meta.get("random_state")
+                _model_info["training_timestamp"] = meta.get("training_started_at")
+                _model_info["metrics"] = meta.get("metrics")
             print(f"Loaded model from Blob: models/latest/model.joblib")
         except Exception as e:
             print(f"Failed to load model from Blob: {e}")
             sklearn_pipeline = None
 else:
     print("AZURE_STORAGE_ACCOUNT not set — skipping Blob download.")
+
+_model_info["api_started_at"] = _api_started_at.isoformat()
 
 
 
@@ -338,10 +367,35 @@ def prediction_stats():
 
 @app.get("/model-info")
 def model_info():
-    """Return metadata about the currently loaded model."""
+    """Return metadata about the currently loaded model and API instance."""
+    uptime = (datetime.now(timezone.utc) - _api_started_at).total_seconds()
     return {
-        "model_name": _model_info["model_name"],
-        "dataset_version": _model_info["dataset_version"],
-        "loaded_model_uri": _model_info["loaded_model_uri"],
-        "api_started_timezone": _model_info["api_started_timezone"],
+        "model": {
+            "name": _model_info["model_name"],
+            "version": _model_info["model_version"],
+            "stage_or_alias": _model_info["model_stage_or_alias"],
+            "pipeline_type": _model_info["pipeline_type"],
+            "classifier_type": _model_info["classifier_type"],
+            "imputer_type": _model_info["imputer_type"],
+            "transformer_type": _model_info["transformer_type"],
+            "is_pca": _model_info["is_pca"],
+            "loaded_from": _model_info["loaded_model_uri"],
+        },
+        "dataset": {
+            "version": _model_info["dataset_version"],
+            "row_count": _model_info["row_count"],
+            "feature_count": _model_info["feature_count"],
+        },
+        "training": {
+            "test_size": _model_info["test_size"],
+            "random_state": _model_info["random_state"],
+            "timestamp": _model_info["training_timestamp"],
+            "metrics": _model_info["metrics"],
+        },
+        "api": {
+            "started_at": _model_info["api_started_at"],
+            "timezone": _model_info["api_started_timezone"],
+            "uptime_seconds": round(uptime, 1),
+            "prediction_count": _prediction_stats["total_requests_since_start"],
+        },
     }
